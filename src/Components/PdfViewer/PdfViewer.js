@@ -6,6 +6,7 @@ import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout";
 import "@react-pdf-viewer/default-layout/lib/styles/index.css";
 import Draggable from "react-draggable";
 import { Resizable } from "re-resizable";
+import { PDFDocument } from "pdf-lib";
 
 const PdfViewer = () => {
   const defaultLayoutPluginInstance = defaultLayoutPlugin();
@@ -14,6 +15,8 @@ const PdfViewer = () => {
   const [image, setImage] = useState(null);
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState({ width: 200, height: 200 });
+
+  const [hasChanges, setHasChanges] = useState(false);
 
   const allowedFiles = ["application/pdf"];
 
@@ -43,6 +46,7 @@ const PdfViewer = () => {
       reader.onload = (e) => setImage(e.target.result);
       reader.readAsDataURL(file);
     }
+    setHasChanges(true);
   };
 
   // Handle resize stop
@@ -55,6 +59,34 @@ const PdfViewer = () => {
 
   const onDragStop = (e, data) => {
     setImagePosition({ x: data.x, y: data.y });
+  };
+
+  const handleSavePdf = async () => {
+    try {
+      const existingPdfBytes = await fetch(pdfFile).then((res) =>
+        res.arrayBuffer()
+      );
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      const imageBytes = await fetch(image).then((res) => res.arrayBuffer());
+      const embeddedImage = await pdfDoc.embedPng(imageBytes);
+      const firstPage = pdfDoc.getPage(0);
+      firstPage.drawImage(embeddedImage, {
+        x: imagePosition.x,
+        y: firstPage.getHeight() - imagePosition.y - imageSize.height,
+        width: imageSize.width,
+        height: imageSize.height,
+      });
+
+      const pdfBytes = await pdfDoc.save();
+
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "updated-pdf.pdf";
+      link.click();
+    } catch (error) {
+      console.error("Error saving PDF:", error);
+    }
   };
 
   return (
@@ -72,7 +104,6 @@ const PdfViewer = () => {
         ></input>
         {pdfError && <span className="text-danger">{pdfError}</span>}
       </form>
-
       <form>
         <label>
           <h5>Add Image</h5>
@@ -85,9 +116,21 @@ const PdfViewer = () => {
           onChange={handleImageUpload}
         />
       </form>
-
-      <h5>View PDF</h5>
-      <div className="viewer">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <h5>View PDF</h5>
+        {hasChanges && (
+          <button onClick={handleSavePdf} style={{ marginLeft: "auto" }}>
+            Download Updated PDF
+          </button>
+        )}
+      </div>
+      <div className="viewer" style={{ position: "relative" }}>
         {pdfFile && (
           <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
             <Viewer
@@ -98,7 +141,6 @@ const PdfViewer = () => {
         )}
         {!pdfFile && <>No file is selected yet</>}
       </div>
-
       <div className="image-container">
         {image && (
           <Draggable>
