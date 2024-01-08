@@ -6,7 +6,7 @@ import { defaultLayoutPlugin } from "@react-pdf-viewer/default-layout";
 import "@react-pdf-viewer/default-layout/lib/styles/index.css";
 import Draggable from "react-draggable";
 import { Resizable } from "re-resizable";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 
 const PdfViewer = () => {
   const defaultLayoutPluginInstance = defaultLayoutPlugin();
@@ -15,8 +15,12 @@ const PdfViewer = () => {
   const [image, setImage] = useState(null);
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState({ width: 200, height: 200 });
-
   const [hasChanges, setHasChanges] = useState(false);
+  const [showImageUpload, setShowImageUpload] = useState(false);
+  const [text, setText] = useState("");
+  const [textPosition, setTextPosition] = useState({ x: 0, y: 0 });
+  const [showTextInput, setShowTextInput] = useState(false);
+  const [textSize, setTextSize] = useState({ width: 100, height: 50 });
 
   const allowedFiles = ["application/pdf"];
 
@@ -49,7 +53,6 @@ const PdfViewer = () => {
     setHasChanges(true);
   };
 
-  // Handle resize stop
   const onResizeStop = (e, direction, ref, d) => {
     setImageSize({
       width: imageSize.width + d.width,
@@ -67,18 +70,32 @@ const PdfViewer = () => {
         res.arrayBuffer()
       );
       const pdfDoc = await PDFDocument.load(existingPdfBytes);
-      const imageBytes = await fetch(image).then((res) => res.arrayBuffer());
-      const embeddedImage = await pdfDoc.embedPng(imageBytes);
-      const firstPage = pdfDoc.getPage(0);
-      firstPage.drawImage(embeddedImage, {
-        x: imagePosition.x,
-        y: firstPage.getHeight() - imagePosition.y - imageSize.height,
-        width: imageSize.width,
-        height: imageSize.height,
-      });
+
+      if (image) {
+        const imageBytes = await fetch(image).then((res) => res.arrayBuffer());
+        const embeddedImage = await pdfDoc.embedPng(imageBytes);
+        const firstPage = pdfDoc.getPage(0);
+        firstPage.drawImage(embeddedImage, {
+          x: imagePosition.x,
+          y: firstPage.getHeight() - imagePosition.y - imageSize.height,
+          width: imageSize.width,
+          height: imageSize.height,
+        });
+      }
+
+      if (text) {
+        const pages = pdfDoc.getPages();
+        const firstPage = pages[0];
+        const { width, height } = firstPage.getSize();
+        firstPage.drawText(text, {
+          x: textPosition.x,
+          y: height - textPosition.y - textSize.height,
+          size: 12,
+          color: rgb(0, 0, 0),
+        });
+      }
 
       const pdfBytes = await pdfDoc.save();
-
       const blob = new Blob([pdfBytes], { type: "application/pdf" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
@@ -87,6 +104,17 @@ const PdfViewer = () => {
     } catch (error) {
       console.error("Error saving PDF:", error);
     }
+  };
+
+  const handleEditClick = () => {
+    setShowImageUpload(!showImageUpload);
+    setShowTextInput(!showTextInput);
+  };
+
+  const handleDeleteImage = () => {
+    setImage(null);
+    setHasChanges(false);
+    setShowImageUpload(false);
   };
 
   return (
@@ -104,18 +132,21 @@ const PdfViewer = () => {
         ></input>
         {pdfError && <span className="text-danger">{pdfError}</span>}
       </form>
-      <form>
-        <label>
-          <h5>Add Image</h5>
-        </label>
-        <br></br>
-        <input
-          type="file"
-          accept="image/*"
-          className="form-control"
-          onChange={handleImageUpload}
-        />
-      </form>
+      {showImageUpload && (
+        <form>
+          <label>
+            <h5>Add Image</h5>
+          </label>
+          <br></br>
+          <input
+            type="file"
+            accept="image/*"
+            className="form-control"
+            onChange={handleImageUpload}
+          />
+        </form>
+      )}
+
       <div
         style={{
           display: "flex",
@@ -124,10 +155,39 @@ const PdfViewer = () => {
         }}
       >
         <h5>View PDF</h5>
-        {hasChanges && (
-          <button onClick={handleSavePdf} style={{ marginLeft: "auto" }}>
-            Download Updated PDF
+        {showTextInput && (
+          <div style={{ marginLeft: "auto" }}>
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Enter text"
+            />
+            <button
+              onClick={() => {
+                setTextPosition({ x: 0, y: 0 });
+                setHasChanges(true);
+              }}
+            >
+              Add Text
+            </button>
+          </div>
+        )}
+
+        {pdfFile && (
+          <button onClick={handleEditClick} style={{ marginLeft: "auto" }}>
+            Edit PDF
           </button>
+        )}
+        {hasChanges && (
+          <>
+            <button onClick={handleDeleteImage} style={{ marginLeft: "auto" }}>
+              Delete Image
+            </button>
+            <button onClick={handleSavePdf} style={{ marginLeft: "auto" }}>
+              Download Updated PDF
+            </button>
+          </>
         )}
       </div>
       <div className="viewer" style={{ position: "relative" }}>
@@ -161,6 +221,34 @@ const PdfViewer = () => {
           </Draggable>
         )}
       </div>
+      {text && (
+        <Draggable
+          onStop={(e, data) => setTextPosition({ x: data.x, y: data.y })}
+          defaultPosition={textPosition}
+        >
+          <Resizable
+            size={textSize}
+            onResizeStop={(e, direction, ref, d) => {
+              setTextSize({
+                width: textSize.width + d.width,
+                height: textSize.height + d.height,
+              });
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                cursor: "move",
+                zIndex: 100,
+                background: "white",
+                padding: "5px",
+              }}
+            >
+              {text}
+            </div>
+          </Resizable>
+        </Draggable>
+      )}
     </div>
   );
 };
